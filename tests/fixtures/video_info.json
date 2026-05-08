@@ -1,0 +1,106 @@
+{
+  "id": "VIDEO001AA1",
+  "title": "First owned video",
+  "webpage_url": "https://www.youtube.com/watch?v=VIDEO001AA1",
+  "playlist_index": 1,
+  "duration": 125,
+  "channel": "Example Channel",
+  "thumbnail": "https://example.invalid/thumb1.jpg",
+  "availability": "public",
+  "formats": [
+    {
+      "format_id": "137",
+      "ext": "mp4",
+      "resolution": "1920x1080",
+      "height": 1080,
+      "width": 1920,
+      "fps": 30,
+      "vcodec": "avc1.640028",
+      "acodec": "none",
+      "tbr": 4500,
+      "filesize": 1000000,
+      "format_note": "1080p"
+    },
+    {
+      "format_id": "248",
+      "ext": "webm",
+      "resolution": "1920x1080",
+      "height": 1080,
+      "width": 1920,
+      "fps": 30,
+      "vcodec": "vp9",
+      "acodec": "none",
+      "tbr": 3200,
+      "format_note": "1080p"
+    },
+    {
+      "format_id": "136",
+      "ext": "mp4",
+      "resolution": "1280x720",
+      "height": 720,
+      "width": 1280,
+      "fps": 30,
+      "vcodec": "avc1.4d401f",
+      "acodec": "none",
+      "tbr": 2200,
+      "format_note": "720p"
+    },
+    {
+      "format_id": "140",
+      "ext": "m4a",
+      "resolution": "audio only",
+      "vcodec": "none",
+      "acodec": "mp4a.40.2",
+      "abr": 128,
+      "language": "en",
+      "format_note": "English"
+    },
+    {
+      "format_id": "141",
+      "ext": "m4a",
+      "resolution": "audio only",
+      "vcodec": "none",
+      "acodec": "mp4a.40.2",
+      "abr": 256,
+      "language": "es",
+      "format_note": "Spanish"
+    },
+    {
+      "format_id": "22",
+      "ext": "mp4",
+      "resolution": "1280x720",
+      "height": 720,
+      "width": 1280,
+      "fps": 30,
+      "vcodec": "avc1.64001F",
+      "acodec": "mp4a.40.2",
+      "tbr": 1800,
+      "format_note": "720p"
+    }
+  ],
+  "subtitles": {
+    "en": [
+      {
+        "ext": "vtt",
+        "url": "https://example.invalid/subs/en.vtt",
+        "name": "English"
+      }
+    ],
+    "es": [
+      {
+        "ext": "vtt",
+        "url": "https://example.invalid/subs/es.vtt",
+        "name": "Spanish"
+      }
+    ]
+  },
+  "automatic_captions": {
+    "en": [
+      {
+        "ext": "srv3",
+        "url": "https://example.invalid/auto/en.srv3",
+        "name": "English automatic"
+      }
+    ]
+  }
+}
