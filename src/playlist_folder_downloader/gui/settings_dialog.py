@@ -23,7 +23,13 @@ from playlist_folder_downloader.settings import AppSettings
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: AppSettings, tr: Callable[[str], str], parent=None) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        tr: Callable[[str], str],
+        detected_ffmpeg_path: str | None = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.tr_text = tr
         self.settings = deepcopy(settings)
@@ -52,7 +58,7 @@ class SettingsDialog(QDialog):
                 break
         form.addRow(tr("settings.language"), self.language)
 
-        self.ffmpeg_path = QLineEdit(self.settings.ffmpeg_path or "")
+        self.ffmpeg_path = QLineEdit(self.settings.ffmpeg_path or detected_ffmpeg_path or "")
         ffmpeg_button = QPushButton(tr("settings.choose"))
         ffmpeg_button.clicked.connect(self._choose_ffmpeg_path)
         ffmpeg_row = QHBoxLayout()

@@ -3,6 +3,7 @@ import pytest
 from playlist_folder_downloader.models import MediaFormat, VideoDownloadOptions
 from playlist_folder_downloader.services.format_selector import (
     build_format_selector,
+    preselect_best_formats,
     quality_label_to_height,
 )
 
@@ -74,3 +75,17 @@ def test_quality_label_to_height() -> None:
     assert quality_label_to_height("2160p") == 2160
     assert quality_label_to_height("Best") is None
     assert quality_label_to_height("Audio only") is None
+
+
+def test_preselect_best_formats_uses_best_video_and_audio() -> None:
+    options = preselect_best_formats(VideoDownloadOptions(max_height=None), formats())
+
+    assert options.selected_video_format_id == "137"
+    assert options.selected_audio_format_ids == ["141"]
+
+
+def test_preselect_best_formats_respects_max_height() -> None:
+    options = preselect_best_formats(VideoDownloadOptions(max_height=720), formats())
+
+    assert options.selected_video_format_id == "136"
+    assert options.selected_audio_format_ids == ["141"]

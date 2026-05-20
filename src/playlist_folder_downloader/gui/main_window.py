@@ -37,17 +37,24 @@ from playlist_folder_downloader.services.dependency_checker import (
     check_dependencies,
 )
 from playlist_folder_downloader.services.download_service import make_download_filename_preview
-from playlist_folder_downloader.services.format_selector import quality_label_to_height
+from playlist_folder_downloader.services.format_selector import (
+    preselect_best_formats,
+    quality_label_to_height,
+)
 from playlist_folder_downloader.settings import AppSettings, save_settings
 from playlist_folder_downloader.utils.filenames import make_playlist_folder_name
 from playlist_folder_downloader.utils.url_utils import is_probably_youtube_media_url
 from playlist_folder_downloader.workers.download_worker import DownloadWorker
+from playlist_folder_downloader.workers.format_prefetch_worker import FormatPrefetchWorker
 from playlist_folder_downloader.workers.playlist_loader_worker import PlaylistLoaderWorker
 from playlist_folder_downloader.workers.video_probe_worker import VideoProbeWorker
 
 
 class MainWindow(QMainWindow):
     cancel_downloads_requested = Signal()
+    cancel_download_requested = Signal(str)
+    remove_download_requested = Signal(str)
+    enqueue_download_requested = Signal(object)
 
     def __init__(
         self,
@@ -66,8 +73,14 @@ class MainWindow(QMainWindow):
         self._playlist_worker: PlaylistLoaderWorker | None = None
         self._probe_thread: QThread | None = None
         self._probe_worker: VideoProbeWorker | None = None
+        self._format_prefetch_thread: QThread | None = None
+        self._format_prefetch_worker: FormatPrefetchWorker | None = None
         self._download_thread: QThread | None = None
         self._download_worker: DownloadWorker | None = None
+        self._download_jobs_by_id: dict[str, DownloadJob] = {}
+        self._removed_download_ids: set[str] = set()
+        self._download_accepts_enqueue = False
+        self._playlist_generation = 0
         self._load_started_at: float | None = None
         self._last_load_print_second = -1
         self._load_timer = QTimer(self)
@@ -146,6 +159,9 @@ class MainWindow(QMainWindow):
         self.apply_all_button.clicked.connect(self.apply_options_to_all)
         self.download_selected_button.clicked.connect(self.download_selected)
         self.cancel_button.clicked.connect(self.cancel_downloads_requested.emit)
+        self.queue_panel.cancel_requested.connect(self._cancel_download)
+        self.queue_panel.retry_requested.connect(self._retry_download)
+        self.queue_panel.remove_requested.connect(self._remove_download_from_queue)
 
     def tr_text(self, key: str) -> str:
         return self.translations.tr(key)
@@ -171,6 +187,8 @@ class MainWindow(QMainWindow):
             self._show_error(self.tr_text("error.invalid_url"))
             return
         debug_print("load button clicked")
+        self._stop_format_prefetch()
+        self._playlist_generation += 1
         self.load_button.setEnabled(False)
         self.playlist_title.setText(self.tr_text("status.loading"))
         self._load_started_at = time.monotonic()
@@ -207,6 +225,7 @@ class MainWindow(QMainWindow):
         self.video_count.setText(count_text)
         self.playlist_table.set_playlist(playlist.videos, self.options_by_id, self.statuses)
         self.queue_panel.reset()
+        self._start_format_prefetch()
         debug_print(f"GUI loaded collection: {playlist.title!r} ({len(playlist.videos)} video(s))")
 
     def _playlist_failed(self, error: str) -> None:
@@ -259,17 +278,28 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _video_probed(self, video: VideoInfo) -> None:
+        self._merge_probed_video(video)
+        debug_print(f"GUI probe complete: {video.id}")
+
+    def _merge_probed_video(self, video: VideoInfo) -> None:
         if self.playlist is None:
             return
         for index, existing in enumerate(self.playlist.videos):
             if existing.id == video.id:
                 self.playlist.videos[index] = video
                 break
+        if video.id in self.options_by_id:
+            self.options_by_id[video.id] = preselect_best_formats(
+                self.options_by_id[video.id],
+                video.formats,
+            )
         self.statuses[video.id] = self.tr_text("status.ready")
         self.playlist_table.update_video(video)
         self.playlist_table.update_status(video.id, self.statuses[video.id])
-        self._selection_changed()
-        debug_print(f"GUI probe complete: {video.id}")
+        if video.id in self.options_by_id:
+            self.playlist_table.update_options_summary(video.id, self.options_by_id[video.id])
+        if any(selected.id == video.id for selected in self.playlist_table.selected_videos()):
+            self._selection_changed()
 
     def _video_probe_failed(self, video_id: str, error: str) -> None:
         self.statuses[video_id] = self.tr_text("status.failed")
@@ -281,6 +311,67 @@ class MainWindow(QMainWindow):
         debug_print("probe thread cleaned up")
         self._probe_worker = None
         self._probe_thread = None
+
+    def _start_format_prefetch(self) -> None:
+        if self.playlist is None or not self.playlist.videos:
+            return
+        self._stop_format_prefetch()
+        generation = self._playlist_generation
+        for video in self.playlist.videos:
+            self.statuses[video.id] = self.tr_text("status.probing")
+            self.playlist_table.update_status(video.id, self.statuses[video.id])
+        worker = FormatPrefetchWorker(list(self.playlist.videos), generation)
+        thread = QThread(self)
+        self._format_prefetch_thread = thread
+        self._format_prefetch_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.message.connect(self._playlist_message)
+        worker.video_ready.connect(self._format_prefetched)
+        worker.video_failed.connect(self._format_prefetch_failed)
+        worker.completed.connect(self._format_prefetch_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(
+            lambda captured_thread=thread, captured_worker=worker: self._format_prefetch_thread_finished(
+                captured_thread,
+                captured_worker,
+            )
+        )
+        thread.start()
+
+    def _format_prefetched(self, video: VideoInfo, generation: int) -> None:
+        if generation != self._playlist_generation:
+            return
+        self._merge_probed_video(video)
+        debug_print(f"GUI format prefetch complete: {video.id}")
+
+    def _format_prefetch_failed(self, video_id: str, error: str, generation: int) -> None:
+        if generation != self._playlist_generation:
+            return
+        self.statuses[video_id] = self.tr_text("status.failed")
+        self.playlist_table.update_status(video_id, self.statuses[video_id])
+        debug_print(f"GUI format prefetch failed: {video_id}: {error}")
+
+    def _format_prefetch_finished(self, generation: int) -> None:
+        if generation == self._playlist_generation and self.playlist is not None:
+            self.playlist_title.setText(self.playlist.title)
+
+    def _format_prefetch_thread_finished(
+        self,
+        thread: QThread,
+        worker: FormatPrefetchWorker,
+    ) -> None:
+        debug_print("format prefetch thread cleaned up")
+        if self._format_prefetch_worker is worker:
+            self._format_prefetch_worker = None
+        if self._format_prefetch_thread is thread:
+            self._format_prefetch_thread = None
+
+    def _stop_format_prefetch(self) -> None:
+        if self._format_prefetch_worker is not None:
+            self._format_prefetch_worker.request_stop()
 
     def apply_options_to_selected(self) -> None:
         selected = self.playlist_table.selected_videos()
@@ -322,6 +413,8 @@ class MainWindow(QMainWindow):
         output_dir = root / make_playlist_folder_name(self.playlist.title, self.playlist.id)
         videos_by_id = {video.id: video for video in self.playlist.videos}
         jobs: list[DownloadJob] = []
+        self._download_jobs_by_id = {}
+        self._removed_download_ids = set()
         for video_id in ids:
             if video_id not in videos_by_id:
                 continue
@@ -335,69 +428,156 @@ class MainWindow(QMainWindow):
             )
             job.message = make_download_filename_preview(job)
             jobs.append(job)
+            self._download_jobs_by_id[video_id] = job
         if not jobs:
             self._show_error(self.tr_text("error.no_selection"))
             return
 
         debug_print(f"starting download queue: {len(jobs)} job(s), output_dir={output_dir}")
         self.queue_panel.reset()
+        for job in jobs:
+            self.statuses[job.video.id] = self.tr_text("status.queued")
+            self.playlist_table.update_status(job.video.id, self.statuses[job.video.id])
+            self.queue_panel.set_job(
+                job.video.id,
+                f"{job.video.title}: {self.tr_text('status.queued')}",
+                0,
+                "queued",
+            )
+        self._start_download_worker(jobs)
+
+    def _start_download_worker(self, jobs: list[DownloadJob]) -> None:
         worker = DownloadWorker(jobs, self.settings.max_concurrent_downloads)
         thread = QThread(self)
         self._download_worker = worker
         self._download_thread = thread
+        self._download_accepts_enqueue = True
         worker.moveToThread(thread)
         self.cancel_downloads_requested.connect(worker.cancel_all, Qt.ConnectionType.DirectConnection)
+        self.cancel_download_requested.connect(worker.cancel_video, Qt.ConnectionType.DirectConnection)
+        self.remove_download_requested.connect(worker.remove_pending, Qt.ConnectionType.DirectConnection)
+        self.enqueue_download_requested.connect(worker.enqueue_job, Qt.ConnectionType.DirectConnection)
         thread.started.connect(worker.run)
         worker.job_started.connect(self._download_started)
         worker.job_progress.connect(self._download_progress)
         worker.job_finished.connect(self._download_finished)
         worker.job_failed.connect(self._download_failed)
         worker.job_canceled.connect(self._download_canceled)
+        worker.all_finished.connect(self._download_queue_completed)
         worker.all_finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._download_thread_finished)
+        thread.finished.connect(
+            lambda captured_thread=thread, captured_worker=worker: self._download_thread_finished(
+                captured_thread,
+                captured_worker,
+            )
+        )
         thread.start()
 
     def _download_started(self, video_id: str) -> None:
+        if video_id in self._removed_download_ids:
+            return
         self.statuses[video_id] = self.tr_text("status.downloading")
         self.playlist_table.update_status(video_id, self.statuses[video_id])
         self.queue_panel.set_job(
             video_id,
             f"{self._video_title(video_id)}: {self.tr_text('status.downloading')}",
             0,
+            "downloading",
         )
 
     def _download_progress(self, video_id: str, percent: float, speed_text: str, eta_text: str) -> None:
-        details = " ".join(part for part in [f"{percent:5.1f}%", speed_text, eta_text] if part)
-        self.queue_panel.set_job(video_id, f"{self._video_title(video_id)}: {details}", percent)
+        if video_id in self._removed_download_ids:
+            return
+        details = " ".join(part for part in [speed_text, eta_text] if part)
+        message = f"{self._video_title(video_id)}: {details}" if details else self._video_title(video_id)
+        self.queue_panel.set_job(video_id, message, percent, "downloading")
 
     def _download_finished(self, video_id: str, message: str) -> None:
+        if video_id in self._removed_download_ids:
+            return
         self.statuses[video_id] = self.tr_text("status.done")
         self.playlist_table.update_status(video_id, self.statuses[video_id])
         self.queue_panel.set_job(
             video_id,
             f"{self._video_title(video_id)}: {self.tr_text('status.done')} - {message}",
             100,
+            "done",
         )
 
     def _download_failed(self, video_id: str, error: str) -> None:
+        if video_id in self._removed_download_ids:
+            return
         self.statuses[video_id] = self.tr_text("status.failed")
         self.playlist_table.update_status(video_id, self.statuses[video_id])
         self.queue_panel.set_job(
             video_id,
             f"{self._video_title(video_id)}: {self.tr_text('status.failed')} - {error}",
-            0,
+            None,
+            "failed",
         )
 
     def _download_canceled(self, video_id: str) -> None:
+        if video_id in self._removed_download_ids:
+            return
         self.statuses[video_id] = self.tr_text("status.canceled")
         self.playlist_table.update_status(video_id, self.statuses[video_id])
-        self.queue_panel.set_job(video_id, f"{self._video_title(video_id)}: {self.tr_text('status.canceled')}", 0)
+        self.queue_panel.set_job(
+            video_id,
+            f"{self._video_title(video_id)}: {self.tr_text('status.canceled')}",
+            None,
+            "canceled",
+        )
 
-    def _download_thread_finished(self) -> None:
-        self._download_worker = None
-        self._download_thread = None
+    def _cancel_download(self, video_id: str) -> None:
+        self.cancel_download_requested.emit(video_id)
+
+    def _remove_download_from_queue(self, video_id: str) -> None:
+        self.remove_download_requested.emit(video_id)
+        self._removed_download_ids.add(video_id)
+        self._download_jobs_by_id.pop(video_id, None)
+        self.queue_panel.remove_job(video_id)
+        if video_id in self.statuses and self.statuses[video_id] in {
+            self.tr_text("status.queued"),
+            self.tr_text("status.canceled"),
+            self.tr_text("status.failed"),
+        }:
+            self.statuses[video_id] = self.tr_text("status.ready")
+            self.playlist_table.update_status(video_id, self.statuses[video_id])
+
+    def _retry_download(self, video_id: str) -> None:
+        job = self._download_jobs_by_id.get(video_id)
+        if job is None:
+            return
+        retry_job = deepcopy(job)
+        retry_job.status = "queued"
+        retry_job.progress = 0.0
+        self._download_jobs_by_id[video_id] = retry_job
+        self._removed_download_ids.discard(video_id)
+        self.statuses[video_id] = self.tr_text("status.queued")
+        self.playlist_table.update_status(video_id, self.statuses[video_id])
+        self.queue_panel.set_job(
+            video_id,
+            f"{self._video_title(video_id)}: {self.tr_text('status.queued')}",
+            0,
+            "queued",
+        )
+        if self._download_worker is not None and self._download_accepts_enqueue:
+            self.enqueue_download_requested.emit(retry_job)
+            return
+        self._start_download_worker([retry_job])
+
+    def _download_queue_completed(self) -> None:
+        self._download_accepts_enqueue = False
+
+    def _download_thread_finished(self, thread: QThread, worker: DownloadWorker) -> None:
+        if self._download_worker is worker:
+            self._download_worker = None
+        if self._download_thread is thread:
+            self._download_thread = None
+        if self._download_worker is None:
+            self._download_accepts_enqueue = False
 
     def _video_title(self, video_id: str) -> str:
         if self.playlist is not None:
@@ -407,7 +587,12 @@ class MainWindow(QMainWindow):
         return video_id
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self.settings, self.tr_text, self)
+        dialog = SettingsDialog(
+            self.settings,
+            self.tr_text,
+            self.dependency_status.ffmpeg_path,
+            self,
+        )
         if dialog.exec():
             self.settings = dialog.selected_settings()
             save_settings(self.settings)

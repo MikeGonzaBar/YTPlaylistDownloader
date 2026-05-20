@@ -2,7 +2,7 @@
 
 Playlist Folder Downloader is a Python 3.11+ desktop application for authorized YouTube playlist and single-video downloads. Paste a playlist URL or a supported video URL, review the videos, choose per-video quality/audio/subtitle options, and download selected videos into a folder named after the playlist or single video.
 
-The cross-platform app uses PySide6/Qt. On macOS, the repo also includes a native SwiftUI frontend that talks to the same Python backend and uses Apple UI materials, `NSVisualEffectView`, and Liquid Glass APIs when they are available on the installed macOS SDK. On Windows, the repo includes a native WinUI 3 frontend built on Windows App SDK with Windows 11-style Acrylic/Mica materials.
+The cross-platform app uses PySide6/Qt. On Linux, including Arch Linux and CachyOS, the Qt frontend uses a dark acrylic-style surface with system ffmpeg/yt-dlp integration. On macOS, the repo also includes a native SwiftUI frontend that talks to the same Python backend and uses Apple UI materials, `NSVisualEffectView`, and Liquid Glass APIs when they are available on the installed macOS SDK. On Windows, the repo includes a native WinUI 3 frontend built on Windows App SDK with Windows 11-style Acrylic/Mica materials.
 
 ## macOS Native Frontend
 
@@ -15,6 +15,13 @@ The macOS frontend is built with SwiftUI and keeps the Python service layer for 
 ![Playlist Folder Downloader native Windows frontend](docs/assets/windows-winui3.png)
 
 The Windows frontend is built with WinUI 3 and keeps the same Python service layer used by the Qt and macOS frontends. It supports playlist and single-video loads, automatic per-video probing, per-video options, JSON-lines download progress, cancellation, and native Windows 11 visual treatment through Acrylic with a Mica fallback.
+
+## Linux / CachyOS Qt Frontend
+
+<!-- Save the current Linux/WSLg screenshot as docs/assets/linux-cachyos-wsl.png and keep this image enabled. -->
+![Playlist Folder Downloader running on Arch Linux WSL with a CachyOS-style Qt frontend](docs/assets/linux-cachyos-wsl.png)
+
+The Linux frontend is the PySide6/Qt app tuned for Arch Linux and CachyOS-style desktop testing. It keeps the same Python service layer, prefetches per-video formats after playlist load, preselects the best available video/audio formats, shows queue progress percentages, and supports per-download cancel, retry, and queue removal actions.
 
 ## Authorized Use Only
 
@@ -71,6 +78,35 @@ uv run python scripts/check_env.py
 
 The Windows frontend targets `net8.0-windows10.0.19041.0`. Its runtime backend launcher prefers the repository `.venv\Scripts\python.exe` when present and falls back to `uv run python`.
 
+Arch Linux or CachyOS-style testing through WSLg:
+
+```bash
+cd /mnt/e/Coding/Personal/YTPlaylistDownloader
+export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/ytplaylistdownloader"
+
+uv sync --extra dev
+uv run python scripts/check_env.py
+QT_QPA_PLATFORM=xcb uv run python scripts/run_dev.py
+```
+
+Use `UV_PROJECT_ENVIRONMENT` when running from `/mnt/e/...` so Linux does not try to reuse the Windows `.venv`. `QT_QPA_PLATFORM=xcb` is the most reliable WSLg launch mode for this app.
+
+If you prefer working from the WSL filesystem for faster file I/O:
+
+```bash
+mkdir -p ~/src/YTPlaylistDownloader
+rsync -a --delete \
+  --exclude .venv \
+  --exclude .pytest_cache \
+  --exclude .ruff_cache \
+  /mnt/e/Coding/Personal/YTPlaylistDownloader/ \
+  ~/src/YTPlaylistDownloader/
+
+cd ~/src/YTPlaylistDownloader
+uv sync --extra dev
+QT_QPA_PLATFORM=xcb uv run python scripts/run_dev.py
+```
+
 ## Per-Video Options
 
 Each video can have its own download options:
@@ -88,7 +124,7 @@ Single video links are shown as a one-item collection, so the same options and d
 
 When embedded subtitles or multiple audio tracks are enabled, the app switches to MKV because it is the most compatible container for those outputs.
 
-On the native macOS frontend, playlist rows are probed in the background after load so the quality, audio-track, and subtitle controls fill in as metadata becomes available. If probing fails for a row, the downloader retries probing that video immediately before download.
+On the Qt and native macOS frontends, playlist rows are probed in the background after load so the quality, audio-track, and subtitle controls fill in as metadata becomes available. If probing fails for a row, the downloader retries probing that video immediately before download.
 
 ## Build Packages
 
@@ -129,9 +165,45 @@ Arch Linux:
 
 `scripts/archlinux/PKGBUILD.template` is a template for a future Arch package. It depends on `python`, `python-pyside6`, `yt-dlp`, and `ffmpeg`, and installs a launcher script.
 
+For Arch Linux or CachyOS development dependencies:
+
+```bash
+sudo pacman -S --needed \
+  base-devel git rsync sudo \
+  python python-pip python-build python-installer python-wheel python-platformdirs \
+  pyside6 pyside6-tools \
+  python-pytest python-pytest-qt python-ruff \
+  uv yt-dlp ffmpeg nodejs npm deno \
+  qt6-base qt6-wayland qt6-svg qt6-tools \
+  breeze breeze-icons \
+  xdg-utils xdg-desktop-portal xdg-desktop-portal-kde \
+  desktop-file-utils appstream namcap
+```
+
+For Arch package checks from a real Arch/CachyOS shell:
+
+```bash
+cd scripts/archlinux
+makepkg -sf
+namcap PKGBUILD
+desktop-file-validate *.desktop
+appstreamcli validate *.metainfo.xml
+```
+
 ## Test and Lint
 
 ```bash
+uv run python -m pytest -q
+uv run python -m ruff check .
+```
+
+When testing from Arch WSL:
+
+```bash
+cd /mnt/e/Coding/Personal/YTPlaylistDownloader
+export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/ytplaylistdownloader"
+
+uv run python scripts/check_env.py
 uv run python -m pytest -q
 uv run python -m ruff check .
 ```

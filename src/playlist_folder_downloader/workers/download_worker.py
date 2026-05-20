@@ -29,17 +29,24 @@ class DownloadWorker(QObject):
         self.max_concurrent_downloads = max(1, max_concurrent_downloads)
         self._cancel_all = False
         self._cancel_current = False
+        self._current_video_id: str | None = None
+        self._cancel_video_ids: set[str] = set()
+        self._removed_video_ids: set[str] = set()
 
     @Slot()
     def run(self) -> None:
         debug_print(f"download worker started: {len(self.jobs)} job(s)")
         for job in self.jobs:
             video_id = job.video.id
+            if video_id in self._removed_video_ids:
+                debug_print(f"download job removed before start: {video_id}")
+                continue
             if self._cancel_all:
                 self.job_canceled.emit(video_id)
                 continue
 
             self._cancel_current = False
+            self._current_video_id = video_id
             debug_print(f"download job started: {video_id}")
             self.job_started.emit(video_id)
             final_filename = ""
@@ -72,11 +79,38 @@ class DownloadWorker(QObject):
             else:
                 debug_print(f"download job finished: {video_id}")
                 self.job_finished.emit(video_id, final_filename or job.message or "Finished")
+            self._current_video_id = None
         debug_print("download worker finished")
         self.all_finished.emit()
 
     def _is_cancel_requested(self) -> bool:
-        return self._cancel_all or self._cancel_current
+        return (
+            self._cancel_all
+            or self._cancel_current
+            or (
+                self._current_video_id is not None
+                and self._current_video_id in self._cancel_video_ids
+            )
+        )
+
+    @Slot(object)
+    def enqueue_job(self, job: DownloadJob) -> None:
+        debug_print(f"download job enqueued: {job.video.id}")
+        self._removed_video_ids.discard(job.video.id)
+        self._cancel_video_ids.discard(job.video.id)
+        self.jobs.append(job)
+
+    @Slot(str)
+    def cancel_video(self, video_id: str) -> None:
+        debug_print(f"cancel video requested: {video_id}")
+        self._cancel_video_ids.add(video_id)
+        if self._current_video_id == video_id:
+            self._cancel_current = True
+
+    @Slot(str)
+    def remove_pending(self, video_id: str) -> None:
+        debug_print(f"remove pending download requested: {video_id}")
+        self._removed_video_ids.add(video_id)
 
     @Slot()
     def cancel_current(self) -> None:

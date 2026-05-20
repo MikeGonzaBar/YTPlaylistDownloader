@@ -19,7 +19,7 @@ class AppSettings:
     language: str | None = None
     max_concurrent_downloads: int = 1
     ffmpeg_path: str | None = None
-    default_quality: str = "1080p"
+    default_quality: str = "Best"
     default_include_audio: bool = True
     default_include_video: bool = True
     default_subtitles_enabled: bool = False

@@ -29,6 +29,15 @@ dist/
 *.msixbundle
 *.nupkg
 *.snupkg
+*.AppImage
+*.deb
+*.rpm
+*.pkg.tar.*
+AppDir/
+
+# Arch Linux packaging outputs
+scripts/archlinux/pkg/
+scripts/archlinux/src/
 
 # .NET / WinUI build outputs
 bin/

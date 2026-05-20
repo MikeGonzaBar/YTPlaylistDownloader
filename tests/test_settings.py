@@ -8,7 +8,7 @@ def test_missing_settings_file(tmp_path: Path) -> None:
 
     assert isinstance(settings, AppSettings)
     assert settings.max_concurrent_downloads == 1
-    assert settings.default_quality == "1080p"
+    assert settings.default_quality == "Best"
 
 
 def test_invalid_json(tmp_path: Path) -> None:

@@ -20,6 +20,60 @@ def quality_label_to_height(label: str) -> int | None:
     return QUALITY_HEIGHTS.get(label)
 
 
+def _format_score(media_format: MediaFormat) -> tuple[float, float, float, float, float]:
+    return (
+        float(media_format.height or 0),
+        float(media_format.width or 0),
+        float(media_format.fps or 0),
+        float(media_format.tbr or media_format.abr or 0),
+        float(media_format.filesize or 0),
+    )
+
+
+def best_video_format_id(
+    available_formats: list[MediaFormat],
+    max_height: int | None,
+) -> str | None:
+    """Return the best video format id, preferring video-only formats."""
+
+    candidates = [
+        item
+        for item in available_formats
+        if item.is_video and (max_height is None or item.height is None or item.height <= max_height)
+    ]
+    if not candidates:
+        return None
+    video_only = [item for item in candidates if not item.is_audio]
+    selected = max(video_only or candidates, key=_format_score)
+    return selected.format_id or None
+
+
+def best_audio_format_id(available_formats: list[MediaFormat]) -> str | None:
+    """Return the best audio format id, preferring audio-only formats."""
+
+    candidates = [item for item in available_formats if item.is_audio]
+    if not candidates:
+        return None
+    audio_only = [item for item in candidates if not item.is_video]
+    selected = max(audio_only or candidates, key=_format_score)
+    return selected.format_id or None
+
+
+def preselect_best_formats(
+    options: VideoDownloadOptions,
+    available_formats: list[MediaFormat],
+) -> VideoDownloadOptions:
+    """Fill empty selected format ids with the best available probed formats."""
+
+    if options.include_video and not options.selected_video_format_id:
+        options.selected_video_format_id = best_video_format_id(available_formats, options.max_height)
+    if options.include_audio and not options.selected_audio_format_ids:
+        best_audio = best_audio_format_id(available_formats)
+        if best_audio:
+            options.selected_audio_format_ids = [best_audio]
+    return options
+
+
 def _height_filter(max_height: int | None) -> str:
     return "" if max_height is None else f"[height<={max_height}]"
 
