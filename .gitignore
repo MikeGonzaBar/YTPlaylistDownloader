@@ -25,6 +25,20 @@ dist/
 *.dmg
 *.pkg
 *.app/
+*.msix
+*.msixbundle
+*.nupkg
+*.snupkg
+
+# .NET / WinUI build outputs
+bin/
+obj/
+windows/PlaylistFolderDownloader/bin/
+windows/PlaylistFolderDownloader/obj/
+*.user
+*.suo
+.vs/
+TestResults/
 
 # SwiftPM / native macOS build outputs
 macos/PlaylistFolderDownloader/.build/
@@ -45,3 +59,4 @@ Thumbs.db
 *.log
 logs/
 downloads/
+.tmp/

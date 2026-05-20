@@ -2,13 +2,19 @@
 
 Playlist Folder Downloader is a Python 3.11+ desktop application for authorized YouTube playlist and single-video downloads. Paste a playlist URL or a supported video URL, review the videos, choose per-video quality/audio/subtitle options, and download selected videos into a folder named after the playlist or single video.
 
-The cross-platform app uses PySide6/Qt. On macOS, the repo also includes a native SwiftUI frontend that talks to the same Python backend and uses Apple UI materials, `NSVisualEffectView`, and Liquid Glass APIs when they are available on the installed macOS SDK.
+The cross-platform app uses PySide6/Qt. On macOS, the repo also includes a native SwiftUI frontend that talks to the same Python backend and uses Apple UI materials, `NSVisualEffectView`, and Liquid Glass APIs when they are available on the installed macOS SDK. On Windows, the repo includes a native WinUI 3 frontend built on Windows App SDK with Windows 11-style Acrylic/Mica materials.
 
 ## macOS Native Frontend
 
 ![Playlist Folder Downloader native macOS frontend](docs/assets/macos-native.png)
 
-The macOS frontend is built with SwiftUI and keeps the Python service layer for yt-dlp metadata probing and downloads. It uses native macOS window materials and glass-style controls, while the cross-platform Qt frontend remains available for Windows, Linux, and non-native macOS runs.
+The macOS frontend is built with SwiftUI and keeps the Python service layer for yt-dlp metadata probing and downloads. It uses native macOS window materials and glass-style controls, while the cross-platform Qt frontend remains available as the portable fallback across desktop platforms.
+
+## Windows Native Frontend
+
+![Playlist Folder Downloader native Windows frontend](docs/assets/windows-winui3.png)
+
+The Windows frontend is built with WinUI 3 and keeps the same Python service layer used by the Qt and macOS frontends. It supports playlist and single-video loads, automatic per-video probing, per-video options, JSON-lines download progress, cancellation, and native Windows 11 visual treatment through Acrylic with a Mica fallback.
 
 ## Authorized Use Only
 
@@ -20,6 +26,7 @@ Use this app only for videos you own, videos you have permission to download, or
 - FFmpeg and ffprobe on `PATH` for merging separate audio/video streams, embedding subtitles, and multi-audio downloads
 - A JavaScript runtime supported by yt-dlp, preferably Deno or Node.js, for reliable current YouTube extraction
 - Python dependencies from `requirements.txt`
+- Optional for the native Windows frontend: .NET 8 SDK or newer SDK capable of targeting `net8.0-windows`
 
 FFmpeg is warning-level at startup because some audio-only or already-combined formats may still download, but most high-quality YouTube downloads require it.
 
@@ -53,7 +60,16 @@ uv run python scripts/check_env.py
 ./scripts/run_macos_native.sh
 ```
 
-The native frontend is macOS-only. It still uses the Python service layer through `uv run python -m playlist_folder_downloader.cli`, so the same authorized-use limits, yt-dlp behavior, FFmpeg requirement, and tests apply.
+The SwiftUI frontend is macOS-only. It still uses the Python service layer through `uv run python -m playlist_folder_downloader.cli`, so the same authorized-use limits, yt-dlp behavior, FFmpeg requirement, and tests apply.
+
+Native Windows WinUI 3 frontend:
+
+```powershell
+uv run python scripts/check_env.py
+.\windows\PlaylistFolderDownloader\run.ps1
+```
+
+The Windows frontend targets `net8.0-windows10.0.19041.0`. Its runtime backend launcher prefers the repository `.venv\Scripts\python.exe` when present and falls back to `uv run python`.
 
 ## Per-Video Options
 
@@ -95,6 +111,12 @@ For the native SwiftUI macOS frontend, build the Swift package directly:
 ```bash
 cd macos/PlaylistFolderDownloader
 swift build --scratch-path .swiftpm-cache
+```
+
+For the native WinUI 3 Windows frontend, build the .NET project directly:
+
+```powershell
+dotnet build .\windows\PlaylistFolderDownloader\PlaylistFolderDownloader.csproj -p:Platform=x64
 ```
 
 Linux:

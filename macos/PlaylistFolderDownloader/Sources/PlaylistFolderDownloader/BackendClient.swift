@@ -65,9 +65,8 @@ actor BackendClient {
     }
 
     func probe(video: VideoInfo) async throws -> VideoInfo {
-        let videoData = try encoder.encode(video)
-        let videoJSON = String(decoding: videoData, as: UTF8.self)
-        let output = try await runBackend(arguments: ["probe", videoJSON])
+        let probeData = try makeProbePayload(video: video)
+        let output = try await runBackend(arguments: ["probe"], standardInput: probeData)
         guard let line = output.split(separator: "\n").last else {
             throw BackendError.invalidOutput
         }
@@ -135,16 +134,24 @@ actor BackendClient {
         processRegistry.terminateAll()
     }
 
-    private func runBackend(arguments: [String]) async throws -> String {
+    private func runBackend(arguments: [String], standardInput: Data? = nil) async throws -> String {
         let process = try makeProcess(arguments: arguments)
         let processID = processRegistry.insert(process)
         defer { processRegistry.remove(processID) }
 
+        let stdin = standardInput.map { _ in Pipe() }
         let stdout = Pipe()
         let errPipe = Pipe()
+        if let stdin {
+            process.standardInput = stdin
+        }
         process.standardOutput = stdout
         process.standardError = errPipe
         try process.run()
+        if let standardInput, let stdin {
+            stdin.fileHandleForWriting.write(standardInput)
+            stdin.fileHandleForWriting.closeFile()
+        }
 
         let output = stdout.fileHandleForReading.readDataToEndOfFile()
         let errorOutput = errPipe.fileHandleForReading.readDataToEndOfFile()
@@ -175,6 +182,18 @@ actor BackendClient {
         }
 
         return failure.error
+    }
+
+    private func makeProbePayload(video: VideoInfo) throws -> Data {
+        var payload: [String: Any] = [
+            "id": video.id,
+            "title": video.title,
+            "webpage_url": video.webpageURL
+        ]
+        if let playlistIndex = video.playlistIndex {
+            payload["playlist_index"] = playlistIndex
+        }
+        return try JSONSerialization.data(withJSONObject: payload)
     }
 
     private func makeProcess(arguments: [String]) throws -> Process {

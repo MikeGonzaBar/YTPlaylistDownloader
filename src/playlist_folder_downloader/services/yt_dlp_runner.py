@@ -6,6 +6,7 @@ from multiprocessing import get_context
 from multiprocessing.context import SpawnProcess
 from multiprocessing.queues import Queue
 from queue import Empty
+from time import monotonic
 from typing import Any
 
 from playlist_folder_downloader.diagnostics import YtDlpDiagnosticLogger, debug_print
@@ -73,23 +74,38 @@ def extract_info_with_timeout(
         debug_print(f"metadata child process starting (timeout={timeout_seconds}s)")
         process.start()
         process_started = True
-        process.join(timeout_seconds)
+        deadline = monotonic() + timeout_seconds
+        payload: dict[str, Any] | None = None
 
+        while monotonic() < deadline:
+            try:
+                payload = queue.get(timeout=0.1)
+                break
+            except Empty:
+                if not process.is_alive():
+                    break
+
+        if payload is None:
+            if process.is_alive():
+                debug_print("metadata child process timed out; terminating")
+                _terminate_process(process)
+                raise MetadataExtractionTimeout(
+                    "Timed out while loading metadata from YouTube. "
+                    "This usually means YouTube or the network did not respond. "
+                    "Try again, check the URL in a browser, or try a single video URL."
+                )
+
+            try:
+                payload = queue.get_nowait()
+            except Empty as exc:
+                raise MetadataExtractionError(
+                    f"yt-dlp metadata process exited without returning data (exit code {process.exitcode})."
+                ) from exc
+
+        process.join(3)
         if process.is_alive():
-            debug_print("metadata child process timed out; terminating")
+            debug_print("metadata child process returned data but did not exit; terminating")
             _terminate_process(process)
-            raise MetadataExtractionTimeout(
-                "Timed out while loading metadata from YouTube. "
-                "This usually means YouTube or the network did not respond. "
-                "Try again, check the URL in a browser, or try a single video URL."
-            )
-
-        try:
-            payload = queue.get_nowait()
-        except Empty as exc:
-            raise MetadataExtractionError(
-                f"yt-dlp metadata process exited without returning data (exit code {process.exitcode})."
-            ) from exc
 
         if not payload.get("ok"):
             error = payload.get("error") or "yt-dlp could not load metadata."

@@ -258,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
     load_parser.add_argument("url")
 
     probe_parser = subparsers.add_parser("probe")
-    probe_parser.add_argument("video_json")
+    probe_parser.add_argument("video_json", nargs="?")
 
     subparsers.add_parser("download")
 
@@ -266,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "load":
         return command_load(args.url)
     if args.command == "probe":
-        return command_probe(args.video_json)
+        return command_probe(args.video_json if args.video_json is not None else sys.stdin.read())
     if args.command == "download":
         return command_download()
     return 2
