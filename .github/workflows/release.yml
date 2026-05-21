@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
 
 env:
@@ -187,7 +188,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG_NAME" release-assets/* \
-            --title "$TAG_NAME" \
-            --notes "Automated release artifacts for $TAG_NAME." \
-            --verify-tag
+          mapfile -t files < <(find release-assets -type f | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets were downloaded."
+            find release-assets -maxdepth 3 -print
+            exit 1
+          fi
+
+          printf 'Release assets:\n'
+          printf ' - %s\n' "${files[@]}"
+
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --notes "Automated release artifacts for $TAG_NAME." \
+              --verify-tag
+          fi
+
+          gh release upload "$TAG_NAME" "${files[@]}" --clobber
