@@ -174,6 +174,15 @@ def apply_liquid_glass_style(app: QApplication) -> None:
             border: 0;
         }
 
+        QScrollArea#queueScroll {
+            background: transparent;
+            border: 0;
+        }
+
+        QScrollArea#queueScroll > QWidget > QWidget {
+            background: transparent;
+        }
+
         QCheckBox {
             color: rgba(248, 248, 250, 230);
             spacing: 6px;
