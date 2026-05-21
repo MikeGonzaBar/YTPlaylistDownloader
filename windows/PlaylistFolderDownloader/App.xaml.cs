@@ -20,7 +20,7 @@ public partial class App : Application
 
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
     {
-        FrontendLog.Write($"Unhandled UI exception: {args.Exception}");
+        FrontendLog.Write($"Unhandled UI exception: {args.Message}\n{args.Exception}");
         System.Diagnostics.Debug.WriteLine(args.Exception);
     }
 }

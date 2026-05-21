@@ -1,0 +1,175 @@
+name: Build release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-winui:
+    name: Windows WinUI 3
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build portable WinUI package
+        shell: pwsh
+        run: ./windows/PlaylistFolderDownloader/package.ps1
+
+      - name: Upload WinUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlaylistFolderDownloader-WinUI3-win-x64
+          path: dist/PlaylistFolderDownloader-WinUI3-win-x64.zip
+
+  windows-qt:
+    name: Windows Qt
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install uv
+        shell: pwsh
+        run: python -m pip install uv
+
+      - name: Build Qt app
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+
+      - name: Zip Qt app
+        shell: pwsh
+        run: Compress-Archive -Path "dist/Playlist Folder Downloader/*" -DestinationPath "dist/PlaylistFolderDownloader-Qt-win-x64.zip"
+
+      - name: Upload Windows Qt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlaylistFolderDownloader-Qt-win-x64
+          path: dist/PlaylistFolderDownloader-Qt-win-x64.zip
+
+  linux-qt:
+    name: Linux Qt
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon-x11-0
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Build Qt app
+        run: bash scripts/build_linux.sh
+
+      - name: Archive Qt app
+        run: tar -C dist -czf dist/PlaylistFolderDownloader-Qt-linux-x64.tar.gz "Playlist Folder Downloader"
+
+      - name: Upload Linux Qt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlaylistFolderDownloader-Qt-linux-x64
+          path: dist/PlaylistFolderDownloader-Qt-linux-x64.tar.gz
+
+  macos-qt:
+    name: macOS Qt
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Build Qt app
+        run: bash scripts/build_macos.sh
+
+      - name: Zip Qt app
+        run: ditto -c -k --keepParent "dist/Playlist Folder Downloader.app" "dist/PlaylistFolderDownloader-Qt-macos.zip"
+
+      - name: Upload macOS Qt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlaylistFolderDownloader-Qt-macos
+          path: dist/PlaylistFolderDownloader-Qt-macos.zip
+
+  github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - windows-winui
+      - windows-qt
+      - linux-qt
+      - macos-qt
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" release-assets/* \
+            --title "$TAG_NAME" \
+            --notes "Automated release artifacts for $TAG_NAME." \
+            --verify-tag

@@ -155,6 +155,12 @@ For the native WinUI 3 Windows frontend, build the .NET project directly:
 dotnet build .\windows\PlaylistFolderDownloader\PlaylistFolderDownloader.csproj -p:Platform=x64
 ```
 
+To create a double-clickable native Windows portable folder and zip:
+
+```powershell
+.\windows\PlaylistFolderDownloader\package.ps1
+```
+
 Linux:
 
 ```bash
@@ -189,6 +195,24 @@ namcap PKGBUILD
 desktop-file-validate *.desktop
 appstreamcli validate *.metainfo.xml
 ```
+
+## GitHub Releases
+
+Release binaries should be attached to GitHub Releases instead of committed into the repository. Push a version tag to build and publish platform artifacts automatically:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow builds:
+
+- Windows WinUI 3 portable zip
+- Windows Qt PyInstaller zip
+- Linux Qt PyInstaller tarball
+- macOS Qt PyInstaller app zip
+
+Manual runs from the GitHub Actions tab build the same artifacts as workflow downloads, but only pushed `v*` tags create a public GitHub Release.
 
 ## Test and Lint
 

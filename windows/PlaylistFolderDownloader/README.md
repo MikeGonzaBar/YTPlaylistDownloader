@@ -55,6 +55,14 @@ To build without launching:
 dotnet build .\PlaylistFolderDownloader.csproj -p:Platform=x64
 ```
 
+To create a double-clickable portable folder and zip:
+
+```powershell
+.\package.ps1
+```
+
+Open `dist\PlaylistFolderDownloader-WinUI3-win-x64\PlaylistFolderDownloader.exe` from the repository root. Keep the exe next to the DLL, PRI, XBF, and Windows App SDK runtime files copied into that folder; the exe will not run correctly by itself.
+
 ## Notes
 
 This is an unpackaged, self-contained Windows App SDK app for local development. If you want Store/MSIX distribution later, add a packaging project or switch the project to packaged deployment.

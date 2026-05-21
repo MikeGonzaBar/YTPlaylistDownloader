@@ -84,7 +84,7 @@
                 Text="0 videos" />
             <TextBlock
                 Grid.Column="3"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Foreground="#B8FFFFFF"
                 Text="Native WinUI 3 frontend" />
         </Grid>
 
